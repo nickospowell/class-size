@@ -1,0 +1,68 @@
+---
+title: "Class Size"
+author: "Nicholas Oliver Silveira Powell"
+format: html
+execute:
+  echo: false
+---
+
+```{r}
+#| label: setup
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(brms)
+library(tidybayes)
+library(gtsummary)
+```
+
+```{r}
+#| message: false
+
+class <- read_csv("data/STAR.csv", show_col_types = F) 
+
+df <- class %>% mutate(kinder = recode_factor(classtype, `1` = "small", `2` = "regular", `3` = "regular with aid"), race = recode_factor(race, `1` = "white", `2` = "black", `3` = "others",`4` = "hispanic", `5` = "others", `6` = "others")) |>
+  filter(classtype %in% c(1,2)) |>
+  select(kinder, g4math, race) |>
+  drop_na()
+```
+
+```{r}
+#| label: model
+#| cache: true
+fit_class <- brm(formula = g4math ~ kinder,
+                 data = df,
+                 family = gaussian(),
+                 silent = 2,
+                 refresh = 0,
+                 seed = 12)
+```
+
+```{r}
+#| label: plots
+fit_class |>
+  add_epred_draws(newdata = tibble(kinder = c("regular", "small"))) |> 
+  ggplot(aes(x = .epred, fill = kinder)) +
+  geom_density(alpha = 0.6) + 
+  labs(title = "Posterior for Exam Score", subtitle = "Class size has no effect on score", x = "Exam Score", y = NULL)
+
+fit_class |> 
+  add_epred_draws(newdata = tibble(kinder = c("regular", "small"))) |> 
+  pivot_wider(id_cols = .draw, names_from = kinder, values_from = .epred) |> 
+  mutate(causal_effect = small - regular) |> 
+  ggplot(aes(x = causal_effect)) +
+    geom_density() +
+    labs(title = "Posterior for the Causal Effect of Fewer Students",
+         subtitle = "Classes with fewer students do not have higher scores",
+         x = "Expected Difference in Exam Scores (Small - Regular)",
+         y = NULL) +
+    theme(axis.text.y=element_blank(),
+          axis.ticks.y=element_blank(),
+          axis.title.y=element_blank())
+tbl_regression(fit_class)
+```
+
+Using data from the Tennessee STAR Project, starting in 1985, we seek to understand the causal effect of class size on math test scores for current elementary school students in the Southern US. Tested content and school curriculums may have changed between 1985 and 2024. We created a gaussian model which details the expected math test score based on whether a student was in a large or small class. The estimated score for small classes was about 709, with a 95% confidence interval between 706 and 712. For large classes, the estimated score was also about 709, with a 95% confidence interval between 703 and 71. The difference between small class test scores and large class test scores was not significant enough to assume causality.
+
+$$ score_i = \beta_0 + \beta_1 (class\_size) $$
